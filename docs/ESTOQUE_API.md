@@ -4,6 +4,12 @@ Depois de reiniciar o bot, abra `/admin` no privado e escolha **API de estoque**
 
 1. Use **Definir chave** para cadastrar o valor completo de `X-Stock-Key`.
 2. Use **Testar conexão** para consultar produtos e quantidades, sem gastar saldo.
+   Falhas aparecem no privado do administrador com a operação, o código HTTP e
+   a mensagem de erro do fornecedor (com a chave ocultada). `401 unauthorized`
+   significa que o fornecedor recusou a chave: confirme ou gere uma nova
+   `X-Stock-Key` no bot raiz e cadastre novamente. A chave anterior é preservada
+   quando o teste da nova chave falha. Erros de rede, TLS e tempo limite também
+   são identificados, sem repetir reservas automaticamente.
 3. Configure **Lucro em porcentagem**: `50` ou `50%` acrescenta 50% ao custo
    de todos os produtos (R$ 10 vira R$ 15). O preço acompanha o custo da API,
    arredondado para centavos. **Ver custos e ganhos** exibe a prévia ao admin.

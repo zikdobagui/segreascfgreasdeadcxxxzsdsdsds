@@ -2,6 +2,7 @@
 import html
 import json
 import math
+import re
 import sqlite3
 import threading
 from functools import wraps
@@ -53,7 +54,30 @@ def comprar(api, servico, buyer_id, sale_id, preco):
 
 
 class EstoqueAPIError(RuntimeError):
-    pass
+    def __init__(self, message, diagnostico=None):
+        super().__init__(message)
+        self.diagnostico = diagnostico or message
+
+
+def detalhe_resposta(response, key):
+    """Extrai apenas o erro, sem publicar corpo, cabeçalhos ou credenciais."""
+    try:
+        payload = response.json()
+    except ValueError:
+        return 'O fornecedor retornou uma resposta que não é JSON.'
+    if not isinstance(payload, dict):
+        return 'O fornecedor não informou uma mensagem de erro.'
+    detail = payload.get('error') or payload.get('message') or payload.get('detail')
+    if isinstance(detail, dict):
+        detail = detail.get('message') or detail.get('code')
+    if not isinstance(detail, str):
+        return 'O fornecedor não informou uma mensagem de erro.'
+    for secret in (key, html.escape(key), json.dumps(key)[1:-1]):
+        if secret:
+            detail = detail.replace(secret, '[CHAVE OCULTA]')
+    detail = re.sub(r'(?i)(bearer\s+|(?:x-stock-key|token|password|senha|secret|api[_-]?key)\s*[:=]\s*)[^\s,;]+',
+                    r'\1[OCULTO]', detail)
+    return ' '.join(detail.split())[:600]
 
 
 def config():
@@ -77,19 +101,36 @@ def request(method, path='', key=None, **kwargs):
     key = key if key is not None else config().get('key', '')
     if not key:
         raise EstoqueAPIError('Configure a chave em /admin → API de estoque.')
+    if not isinstance(key, str) or any(c.isspace() for c in key) or not key.isascii():
+        raise EstoqueAPIError('Chave inválida: envie apenas a chave X-Stock-Key, sem espaços ou caracteres especiais.')
+    operation = f'{method} {URL}{path}'
     try:
         response = requests.request(method, URL + path, headers={'X-Stock-Key': key},
                                     timeout=(5, 25), allow_redirects=False, **kwargs)
-    except requests.RequestException:
-        raise EstoqueAPIError('API indisponível. Consulte o suporte antes de repetir a compra.') from None
+    except requests.RequestException as exc:
+        if isinstance(exc, requests.Timeout):
+            reason = 'Tempo limite excedido ao acessar o fornecedor.'
+        elif isinstance(exc, requests.exceptions.SSLError):
+            reason = 'Falha na verificação do certificado TLS do fornecedor.'
+        elif isinstance(exc, requests.ConnectionError):
+            reason = 'Não foi possível conectar ao fornecedor. Verifique rede, DNS e disponibilidade do servidor.'
+        else:
+            reason = 'Falha ao enviar a requisição ao fornecedor.'
+        raise EstoqueAPIError('API indisponível. Consulte o suporte antes de repetir a compra.',
+                              f'{operation}\n{reason}\nSe era uma reserva, confira no fornecedor antes de repetir.') from None
     if response.status_code != 200 and response.status_code != 201:
         reasons = {401: 'Chave da API inválida.', 403: 'API bloqueada: verifique chave e saldo no bot raiz.',
                    402: 'Saldo insuficiente no bot raiz.', 409: 'Reserva recusada ou estoque indisponível.'}
-        raise EstoqueAPIError(reasons.get(response.status_code, 'API recusou a operação. Consulte o suporte.'))
+        message = reasons.get(response.status_code, 'API recusou a operação. Consulte o suporte.')
+        diagnostic = f'{operation}\nHTTP {response.status_code}: {message}\nFornecedor: {detalhe_resposta(response, key)}'
+        if response.status_code == 401:
+            diagnostic += '\nGere ou confirme a chave X-Stock-Key no bot raiz e envie novamente em Definir chave.'
+        raise EstoqueAPIError(message, diagnostic)
     try:
         return response.json()
     except ValueError:
-        raise EstoqueAPIError('Resposta inválida da API. Consulte o suporte.') from None
+        raise EstoqueAPIError('Resposta inválida da API. Consulte o suporte.',
+                              f'{operation}\nHTTP {response.status_code}: o fornecedor retornou conteúdo que não é JSON.') from None
 
 
 def normalizar(payload):

@@ -61,8 +61,12 @@ def registrar(bot, api):
                     raise ValueError('Use uma duração de 1 a 3650 dias.')
                 estoque_api.salvar_config(duracao_padrao=days)
             bot.send_message(message.chat.id, '✅ Configuração salva.')
-        except (ValueError, estoque_api.EstoqueAPIError) as exc:
-            bot.send_message(message.chat.id, f'Não foi possível salvar: {exc}')
+        except estoque_api.EstoqueAPIError as exc:
+            bot.send_message(message.chat.id, f'Não foi possível salvar:\n{exc.diagnostico}', parse_mode=None)
+        except ValueError:
+            bot.send_message(message.chat.id, 'Não foi possível salvar: valor ou formato inválido. Confira o formato solicitado.', parse_mode=None)
+        except OSError:
+            bot.send_message(message.chat.id, 'Não foi possível salvar a configuração no disco. Verifique as permissões da pasta settings e o espaço disponível.', parse_mode=None)
         menu(message.chat.id)
 
     @bot.callback_query_handler(func=lambda c: c.data.startswith('stock_api_'))
@@ -78,7 +82,7 @@ def registrar(bot, api):
                 rows = estoque_api.catalogo()
                 bot.send_message(call.message.chat.id, f'✅ API conectada: {len(rows)} produtos, {sum(r["quantidade"] for r in rows)} unidades. Nenhuma reserva realizada.')
             except estoque_api.EstoqueAPIError as exc:
-                bot.send_message(call.message.chat.id, str(exc))
+                bot.send_message(call.message.chat.id, exc.diagnostico, parse_mode=None)
             return
         if action == 'previa':
             try:
@@ -92,7 +96,7 @@ def registrar(bot, api):
                                  f' | Ganho: R$ {row["valor"] - row["custo"]:.2f}\n\n')
                     bot.send_message(call.message.chat.id, text)
             except estoque_api.EstoqueAPIError as exc:
-                bot.send_message(call.message.chat.id, str(exc))
+                bot.send_message(call.message.chat.id, exc.diagnostico, parse_mode=None)
             return
         if action == 'reservas':
             with estoque_api.journal() as db:

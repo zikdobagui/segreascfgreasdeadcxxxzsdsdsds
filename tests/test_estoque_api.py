@@ -45,6 +45,62 @@ class RemoteStockTests(unittest.TestCase):
         self.assertEqual(call.kwargs['headers'], {'X-Stock-Key': 'secret-test-key'})
         self.assertFalse(call.kwargs['allow_redirects'])
 
+    def test_admin_diagnostic_includes_status_and_redacts_key(self):
+        self.request.side_effect = None
+        self.request.return_value = self.response({'error': 'unauthorized secret-test-key'}, 401)
+        with self.assertRaises(stock.EstoqueAPIError) as raised:
+            stock.catalogo()
+        self.assertIn('HTTP 401', raised.exception.diagnostico)
+        self.assertIn('unauthorized', raised.exception.diagnostico)
+        self.assertNotIn('secret-test-key', raised.exception.diagnostico)
+        self.assertNotIn('unauthorized', str(raised.exception))
+
+    def test_network_diagnostics_do_not_echo_exception_secrets(self):
+        for error, expected in [(requests.Timeout('secret-test-key'), 'Tempo limite'),
+                                (requests.ConnectionError('secret-test-key'), 'DNS'),
+                                (requests.exceptions.SSLError('secret-test-key'), 'TLS')]:
+            self.request.side_effect = error
+            with self.assertRaises(stock.EstoqueAPIError) as raised:
+                stock.catalogo()
+            self.assertIn(expected, raised.exception.diagnostico)
+            self.assertNotIn('secret-test-key', raised.exception.diagnostico)
+
+    def test_non_json_error_is_reported_without_response_body(self):
+        self.request.side_effect = None
+        self.request.return_value = SimpleNamespace(status_code=502, json=Mock(side_effect=ValueError()))
+        with self.assertRaises(stock.EstoqueAPIError) as raised:
+            stock.catalogo()
+        self.assertIn('HTTP 502', raised.exception.diagnostico)
+        self.assertIn('não é JSON', raised.exception.diagnostico)
+
+    def test_invalid_header_key_is_rejected_before_network(self):
+        for key in ('key\nvalue', 'chave🔑'):
+            with self.assertRaises(stock.EstoqueAPIError):
+                stock.catalogo(key=key)
+        self.request.assert_not_called()
+
+    def test_admin_key_failure_shows_diagnostic_and_preserves_saved_key(self):
+        from app import painel_estoque_api
+        callbacks = []
+        bot = Mock()
+        bot.callback_query_handler.side_effect = lambda **kw: lambda fn: callbacks.append(fn) or fn
+        api = SimpleNamespace(Admin=SimpleNamespace(verificar_admin=lambda _: False),
+                              CredentialsChange=SimpleNamespace(id_dono=lambda: 1))
+        with patch.dict(sys.modules, {'telebot.types': SimpleNamespace(InlineKeyboardMarkup=Mock(), InlineKeyboardButton=Mock())}):
+            painel_estoque_api.registrar(bot, api)
+        chat = SimpleNamespace(id=1, type='private')
+        callbacks[0](SimpleNamespace(from_user=SimpleNamespace(id=1), id='c', data='stock_api_chave',
+                                     message=SimpleNamespace(chat=chat)))
+        handler, action, owner = bot.register_next_step_handler.call_args.args[1:]
+        self.request.side_effect = None
+        self.request.return_value = self.response({'error': 'unauthorized new-secret'}, 401)
+        handler(SimpleNamespace(from_user=SimpleNamespace(id=1), chat=chat, text='new-secret', message_id=5), action, owner)
+        self.assertEqual(stock.config()['key'], 'secret-test-key')
+        messages = [call.args[1] for call in bot.send_message.call_args_list]
+        self.assertTrue(any('HTTP 401' in message and 'unauthorized' in message for message in messages))
+        self.assertFalse(any('new-secret' in message for message in messages))
+        self.assertFalse(any('✅ Configuração salva.' in message for message in messages))
+
     def test_percentage_overrides_fixed_price_and_follows_api_cost(self):
         stock.definir_porcentagem('50%')
         self.assertEqual(stock.catalogo()[0]['valor'], 15)
