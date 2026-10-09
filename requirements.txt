@@ -1,0 +1,8 @@
+pyTelegramBotAPI>=4.24.0
+pytz==2023.3
+requests
+httpx
+httpx[http2]
+Pillow
+schedule
+qrcode

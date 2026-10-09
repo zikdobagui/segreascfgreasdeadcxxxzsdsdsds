@@ -1,0 +1,11 @@
+Mobix Store - BOT OTIMIZADO
+Gerado em: 12/05/2026 13:51:32
+
+Otimizações aplicadas:
+- Ativação automática do garbage collector
+- Melhor estabilidade do console UTF-8
+- Ativação do faulthandler
+- Ajustes de buffer Python
+- Limpeza simples de imports duplicados
+
+Nenhuma função ou usuário foi removido.

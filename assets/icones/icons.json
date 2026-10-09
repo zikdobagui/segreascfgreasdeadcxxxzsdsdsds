@@ -1,0 +1,212 @@
+{
+  "watch_tv": {
+    "type": "file",
+    "value": "/root/clou/cloudmanager/projects/726e6c3f-5778-407b-a47c-a84fc946d81f/Rlbot/assets/icones/watch_tv.jpg",
+    "label": "WATCH TV"
+  },
+  "zapping_full+premiere": {
+    "type": "file",
+    "value": "/home/user_1392088766537273445/assets/icones/zapping_full+premiere.jpg",
+    "label": "ZAPPING FULL+PREMIERE"
+  },
+  "prime_video": {
+    "type": "file",
+    "value": "/application/assets/icones/prime_video.jpg",
+    "label": "PRIME VIDEO"
+  },
+  "crunchyroll": {
+    "type": "file",
+    "value": "/home/user_discloud/assets/icones/crunchyroll.jpg",
+    "label": "CRUNCHYROLL"
+  },
+  "globo_premium": {
+    "type": "file",
+    "value": "/home/user_discloud/assets/icones/globo_premium.jpg",
+    "label": "GLOBO PREMIUM"
+  },
+  "prime+max+premiere": {
+    "type": "file",
+    "value": "/application/assets/icones/prime+max+premiere.jpg",
+    "label": "PRIME+MAX+PREMIERE"
+  },
+  "prime+max": {
+    "type": "file",
+    "value": "/home/user_1392088766537273445/assets/icones/prime+max.jpg",
+    "label": "PRIME+MAX"
+  },
+  "hbo_max": {
+    "type": "file",
+    "value": "/home/user_discloud/assets/icones/hbo_max.jpg",
+    "label": "HBO MAX"
+  },
+  "paramout_premium": {
+    "type": "file",
+    "value": "/home/user_discloud/assets/icones/paramout_premium.jpg",
+    "label": "PARAMOUT PREMIUM"
+  },
+  "spotify_1_mes": {
+    "type": "file",
+    "value": "/home/user_discloud/assets/icones/spotify_1_mes.jpg",
+    "label": "SPOTIFY 1 MES"
+  },
+  "hbo_max_platinum": {
+    "type": "file",
+    "value": "/home/user_1392088766537273445/assets/icones/hbo_max_platinum.jpg",
+    "label": "HBO MAX PLATINUM"
+  },
+  "prime+premiere": {
+    "type": "file",
+    "value": "/home/user_1408670555712000211/assets/icones/prime+premiere.jpg",
+    "label": "PRIME+PREMIERE"
+  },
+  "canva_convite": {
+    "type": "file",
+    "value": "/root/clou/cloudmanager/projects/726e6c3f-5778-407b-a47c-a84fc946d81f/Rlbot/assets/icones/canva_convite.jpg",
+    "label": "CANVA CONVITE"
+  },
+  "disney_padrão": {
+    "type": "file",
+    "value": "/application/assets/icones/disney_padrão.jpg",
+    "label": "DISNEY PADRÃO"
+  },
+  "disney_premium": {
+    "type": "file",
+    "value": "/home/user_discloud/assets/icones/disney_premium.jpg",
+    "label": "DISNEY PREMIUM"
+  },
+  "netflix_premium": {
+    "type": "file",
+    "value": "/application/assets/icones/netflix_premium.jpg",
+    "label": "NETFLIX PREMIUM"
+  },
+  "chat_gpt": {
+    "type": "file",
+    "value": "/home/user_1392088766537273445/assets/icones/chat_gpt.jpg",
+    "label": "CHAT GPT"
+  },
+  "globo_premium+premiere": {
+    "type": "file",
+    "value": "/root/clou/cloudmanager/projects/726e6c3f-5778-407b-a47c-a84fc946d81f/Rlbot/assets/icones/globo_premium+premiere.jpg",
+    "label": "GLOBO PREMIUM+PREMIERE"
+  },
+  "chat_gpt_plus": {
+    "type": "file",
+    "value": "/home/user_discloud/assets/icones/chat_gpt_plus.jpg",
+    "label": "CHAT GPT PLUS"
+  },
+  "youtube_família": {
+    "type": "file",
+    "value": "/application/assets/icones/youtube_família.jpg",
+    "label": "YOUTUBE FAMÍLIA"
+  },
+  "paramount": {
+    "type": "file",
+    "value": "/home/user_discloud/assets/icones/paramount.jpg",
+    "label": "PARAMOUNT"
+  },
+  "netflix_premiumbr": {
+    "type": "file",
+    "value": "/home/user_discloud/assets/icones/netflix_premiumbr.jpg",
+    "label": "NETFLIX PREMIUM(BR)"
+  },
+  "netflix_premium_tela": {
+    "type": "file",
+    "value": "/home/user_discloud/assets/icones/netflix_premium_tela.jpg",
+    "label": "NETFLIX PREMIUM (TELA)"
+  },
+  "spotify_individual": {
+    "type": "file",
+    "value": "/home/user_discloud/assets/icones/spotify_individual.jpg",
+    "label": "SPOTIFY INDIVIDUAL"
+  },
+  "zapping_full+premiere+telecine": {
+    "type": "file",
+    "value": "/root/clou/cloudmanager/projects/726e6c3f-5778-407b-a47c-a84fc946d81f/Rlbot/assets/icones/zapping_full+premiere+telecine.jpg",
+    "label": "ZAPPING FULL+PREMIERE+TELECINE"
+  },
+  "prime_video_tela": {
+    "type": "file",
+    "value": "/root/clou/cloudmanager/projects/726e6c3f-5778-407b-a47c-a84fc946d81f/Rlbot/assets/icones/prime_video_tela.jpg",
+    "label": "PRIME VIDEO TELA"
+  },
+  "paramout": {
+    "type": "file",
+    "value": "/root/clou/cloudmanager/projects/726e6c3f-5778-407b-a47c-a84fc946d81f/Rlbot/assets/icones/paramout.jpg",
+    "label": "PARAMOUT"
+  },
+  "netflix_padrão": {
+    "type": "file",
+    "value": "/home/user_discloud/assets/icones/netflix_padrão.jpg",
+    "label": "NETFLIX PADRÃO"
+  },
+  "globo+telecine": {
+    "type": "file",
+    "value": "/root/clou/cloudmanager/projects/726e6c3f-5778-407b-a47c-a84fc946d81f/Rlbot/assets/icones/globo+telecine.jpg",
+    "label": "GLOBO+TELECINE"
+  },
+  "globo+premiere": {
+    "type": "file",
+    "value": "/root/clou/cloudmanager/projects/726e6c3f-5778-407b-a47c-a84fc946d81f/Rlbot/assets/icones/globo+premiere.jpg",
+    "label": "GLOBO+PREMIERE"
+  },
+  "globo_premium+3_adicionais": {
+    "type": "file",
+    "value": "/root/clou/cloudmanager/projects/726e6c3f-5778-407b-a47c-a84fc946d81f/Rlbot/assets/icones/globo_premium+3_adicionais.jpg",
+    "label": "GLOBO PREMIUM+3 ADICIONAIS"
+  },
+  "globo": {
+    "type": "file",
+    "value": "/root/clou/cloudmanager/projects/726e6c3f-5778-407b-a47c-a84fc946d81f/Rlbot/assets/icones/globo.jpg",
+    "label": "GLOBO"
+  },
+  "canva_família": {
+    "type": "file",
+    "value": "/root/clou/cloudmanager/projects/726e6c3f-5778-407b-a47c-a84fc946d81f/Rlbot/assets/icones/canva_família.jpg",
+    "label": "CANVA FAMÍLIA"
+  },
+  "prime+3_adicionais": {
+    "type": "file",
+    "value": "/application/assets/icones/prime+3_adicionais.jpg",
+    "label": "PRIME+3 ADICIONAIS"
+  },
+  "spotify_link_de_convite": {
+    "type": "file",
+    "value": "/application/assets/icones/spotify_link_de_convite.jpg",
+    "label": "SPOTIFY LINK DE CONVITE"
+  },
+  "hbo_max_tela": {
+    "type": "file",
+    "value": "/home/user_discloud/assets/icones/hbo_max_tela.jpg",
+    "label": "HBO MAX TELA"
+  },
+  "prime_sem_anúncio": {
+    "type": "file",
+    "value": "/home/user_discloud/assets/icones/prime_sem_anúncio.jpg",
+    "label": "PRIME SEM ANÚNCIO"
+  },
+  "paramount_premium": {
+    "type": "file",
+    "value": "/application/assets/icones/paramount_premium.jpg",
+    "label": "PARAMOUNT PREMIUM"
+  },
+  "netflix_premiumvia_op_sem_cdg": {
+    "type": "file",
+    "value": "/home/user_discloud/assets/icones/netflix_premiumvia_op_sem_cdg.jpg",
+    "label": "NETFLIX PREMIUM(VIA OP SEM CDG)"
+  },
+  "pack_de_300_artes_de_streaming_editavel": {
+    "type": "file",
+    "value": "/home/user_discloud/assets/icones/pack_de_300_artes_de_streaming_editavel.jpg",
+    "label": "PACK DE 300 ARTES DE STREAMING EDITAVEL"
+  },
+  "premiere": {
+    "type": "file",
+    "value": "/application/assets/icones/premiere.jpg",
+    "label": "PREMIERE"
+  },
+  "netflix_premiumsem_cdg": {
+    "type": "file",
+    "value": "/home/user_discloud/assets/icones/netflix_premiumsem_cdg.jpg",
+    "label": "NETFLIX PREMIUM(SEM CDG)"
+  }
+}
