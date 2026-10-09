@@ -23,9 +23,13 @@ ou crie `settings/virtualpay.json` com a estrutura `{"token": "SUA_CHAVE"}`.
 O arquivo local é ignorado pelo Git. O bot não carrega arquivos `.env`
 automaticamente.
 
-Depois de iniciar o bot configurado, use `/restaurar_dados` para enviar os
-dados existentes. O arquivo ZIP precisa conter as três pastas na raiz.
-O comando é exclusivo do dono e solicita confirmação antes da substituição.
+Depois de iniciar o bot configurado, envie o ZIP diretamente no privado pela
+conta do dono. `/restaurar_dados` também exibe as instruções. O arquivo precisa
+conter uma ou mais pastas entre `database`, `textos` e `data`, na raiz ou dentro
+de uma pasta externa. Também aceita o conteúdo de `database` sem a pasta, se
+incluir `bot.db`. Em um backup completo, só as pastas de dados são importadas.
+Pastas não enviadas são preservadas. O bot mostra as pastas reconhecidas e
+solicita confirmação antes da substituição.
 
 ## Discloud
 

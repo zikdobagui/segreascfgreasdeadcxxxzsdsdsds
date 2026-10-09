@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 import zipfile
+import telebot
 
 from app import data_restore as restore
 from app import restore_handlers
@@ -67,18 +68,41 @@ class RestoreTests(unittest.TestCase):
             self.assertEqual((self.root / result["backup"] / name / "old.txt").read_text(), "anterior")
         restore.apply_pending(self.root)  # não reaplica o ZIP no próximo boot
 
-    def test_rejects_traversal_and_unrelated_files(self):
-        for name in ("../escape.txt", "/database/a", "database/../escape", "database\\a",
-                     "database/C:bad", "settings/credenciais.json", "database/a./x"):
+    def test_rejects_traversal(self):
+        for name in ("../escape.txt", "/database/a", "database/../escape", "database\\..\\escape",
+                     "database/C:bad", "database/a./x"):
             with self.subTest(name=name):
                 with self.assertRaises(ValueError):
                     restore.prepare(self.root, self.archive({**self.entries, name: b"bad"}))
                 self.assert_old_data()
                 self.assertFalse((self.root / restore.STATE_DIR / "candidate").exists())
 
+    def test_accepts_wrapper_and_ignores_project_files(self):
+        entries = {"backup/" + k: v for k, v in self.entries.items()}
+        entries.update({"backup/": b"", "backup/bot.py": b"do not execute",
+                        "backup/settings/credenciais.json": b"private config"})
+        summary = restore.prepare(self.root, self.archive(entries))
+        self.assertEqual(summary["ignored"], 3)
+        candidate = self.root / restore.STATE_DIR / "candidate"
+        self.assertFalse((candidate / "settings").exists())
+        self.assertTrue((candidate / "database/bot.db").exists())
+        self.assert_old_data()
+
+    def test_full_backup_at_root_ignores_code_and_metadata(self):
+        summary = restore.prepare(self.root, self.archive({**self.entries, "bot.py": b"code",
+            ".DS_Store": b"metadata", "__MACOSX/._database": b"metadata"}))
+        self.assertEqual(summary["ignored"], 3)
+        self.assertEqual(summary["files"], 4)
+
+    def test_ambiguous_backups_rejected(self):
+        entries = {prefix + k: v for prefix in ("old/", "new/") for k, v in self.entries.items()}
+        with self.assertRaisesRegex(ValueError, "mais de um"):
+            restore.prepare(self.root, self.archive(entries))
+        self.assert_old_data()
+
     def test_rejects_missing_folder_broken_json_and_broken_database(self):
         variants = [
-            {k: v for k, v in self.entries.items() if not k.startswith("data/")},
+            {k: v for k, v in self.entries.items() if k != "database/bot.db"},
             {**self.entries, "data/users.json": b"{"},
             {**self.entries, "database/bot.db": b"not sqlite"},
         ]
@@ -115,6 +139,39 @@ class RestoreTests(unittest.TestCase):
         restore.queue(self.root, 123)
         restore.apply_pending(self.root)
         self.assertEqual(list((self.root / "textos").iterdir()), [])
+
+    def test_missing_data_folder_is_preserved(self):
+        entries = {k: v for k, v in self.entries.items() if not k.startswith("data/")}
+        result = restore.prepare(self.root, self.archive(entries))
+        self.assertEqual(result["folders"], ["database", "textos"])
+        restore.queue(self.root, 123)
+        restore.apply_pending(self.root)
+        self.assertEqual((self.root / "data/old.txt").read_text(), "anterior")
+        self.assertEqual((self.root / "textos/start.txt").read_text(), "novo texto")
+
+    def test_windows_paths_inside_wrapper(self):
+        entries = {"backup\\" + k.replace("/", "\\"): v for k, v in self.entries.items()}
+        result = restore.prepare(self.root, self.archive(entries))
+        self.assertEqual(result["files"], 4)
+        self.assertTrue((self.root / restore.STATE_DIR / "candidate/database/bot.db").is_file())
+
+    def test_flat_database_contents_are_recognized(self):
+        result = restore.prepare(self.root, self.archive({
+            "bot.db": self.source.read_bytes(), "example.json": b"{}"}))
+        self.assertEqual(result["folders"], ["database"])
+        restore.queue(self.root, 123)
+        restore.apply_pending(self.root)
+        self.assertTrue((self.root / "database/bot.db").is_file())
+        self.assertEqual((self.root / "data/old.txt").read_text(), "anterior")
+        self.assertEqual((self.root / "textos/old.txt").read_text(), "anterior")
+
+    def test_text_only_restore_does_not_require_or_replace_database(self):
+        result = restore.prepare(self.root, self.archive({"textos/start.txt": b"novo texto"}))
+        self.assertEqual(result["folders"], ["textos"])
+        restore.queue(self.root, 123)
+        restore.apply_pending(self.root)
+        self.assertEqual((self.root / "database/old.txt").read_text(), "anterior")
+        self.assertEqual((self.root / "textos/start.txt").read_text(), "novo texto")
 
     def test_wal_is_incorporated_before_replacement(self):
         conn = sqlite3.connect(self.source)
@@ -238,6 +295,45 @@ class HandlerTests(unittest.TestCase):
             exit_.assert_called_once_with(75)
             self.handlers["confirm"](call)
             queue.assert_called_once()
+
+    def test_zip_without_command_or_file_size_is_validated(self):
+        self.message.document = SimpleNamespace(file_name="data.zip", file_size=None, file_id="test")
+        self.bot.get_file.return_value = SimpleNamespace(file_size=3, file_path="test")
+        self.bot.download_file.return_value = b"zip"
+        with patch.object(restore, "prepare", return_value={"files": 4, "bytes": 3}) as prepare:
+            self.handlers["receive"](self.message)
+        prepare.assert_called_once()
+        self.assertIn("reply_markup", self.bot.send_message.call_args.kwargs)
+
+    def test_pending_edit_cannot_consume_zip(self):
+        real_bot = telebot.TeleBot("123456:TEST_TOKEN", threaded=False)
+        real_bot.send_message = Mock()
+        real_bot.get_file = Mock(return_value=SimpleNamespace(file_size=3, file_path="test"))
+        real_bot.download_file = Mock(return_value=b"zip")
+        restore_handlers.registrar(real_bot, 123, self.root)
+        edit_callback = Mock()
+        real_bot.register_next_step_handler_by_chat_id(123, edit_callback)
+        message = telebot.types.Message.de_json({
+            "message_id": 1, "date": 1, "chat": {"id": 123, "type": "private"},
+            "from": {"id": 123, "is_bot": False, "first_name": "Owner"},
+            "document": {"file_id": "test", "file_unique_id": "test", "file_name": "backup.zip", "file_size": 3},
+        })
+        with patch.object(restore, "prepare", return_value={"files": 4, "bytes": 3}) as prepare:
+            real_bot.process_new_messages([message])
+        edit_callback.assert_not_called()
+        prepare.assert_called_once()
+        self.assertIn("reply_markup", real_bot.send_message.call_args.kwargs)
+
+    def test_direct_unauthorized_upload_does_not_download(self):
+        self.message.from_user.id = 999
+        self.handlers["receive"](self.message)
+        self.bot.get_file.assert_not_called()
+
+    def test_unsupervised_upload_reports_problem(self):
+        with patch.dict(os.environ, {"BOT_RESTORE_SUPERVISED": "0"}):
+            self.handlers["receive"](self.message)
+        self.bot.get_file.assert_not_called()
+        self.assertIn("bot.py", self.bot.send_message.call_args.args[1])
 
     def test_cancel_and_expiration_never_queue(self):
         self.handlers["begin"](self.message)

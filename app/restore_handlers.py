@@ -7,6 +7,8 @@ import secrets
 import tempfile
 import threading
 import time
+import zipfile
+import sqlite3
 
 from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup
 from app import data_restore
@@ -23,7 +25,8 @@ def notify_result(bot, owner_id, root="."):
         if int(result["chat_id"]) != int(owner_id):
             return
         if result["ok"]:
-            text = ("✅ As pastas database, textos e data foram substituídas. "
+            names = ", ".join(result.get("folders", data_restore.FOLDERS))
+            text = (f"✅ Pastas substituídas: {names}. "
                     "O bot carregou os dados importados.\n"
                     f"Backup anterior no servidor: {result['backup']}")
         else:
@@ -49,6 +52,12 @@ def registrar(bot, owner_id, root="."):
     def active():
         return state and time.monotonic() < state["expires"]
 
+    def is_zip(message):
+        document = getattr(message, "document", None)
+        return document is not None and (
+            (document.file_name or "").lower().endswith(".zip")
+            or getattr(document, "mime_type", "") in ("application/zip", "application/x-zip-compressed"))
+
     @bot.message_handler(commands=["restaurar_dados"])
     def begin(message):
         if not authorized(message):
@@ -66,9 +75,10 @@ def registrar(bot, owner_id, root="."):
             state.update(expires=time.monotonic() + SESSION_SECONDS, token=None)
             bot.clear_step_handler_by_chat_id(owner_id)
             bot.send_message(owner_id,
-                "Envie um ZIP de até 20 MB contendo na raiz as três pastas:\n"
+                "Envie um ZIP de até 20 MB com uma ou mais pastas (na raiz ou dentro de uma pasta):\n"
                 "database/ (incluindo bot.db)\ntextos/\ndata/\n\n"
-                "A substituição será TOTAL: arquivos atuais ausentes no ZIP também serão removidos. "
+                "Somente as pastas enviadas serão substituídas por completo. As pastas não enviadas serão preservadas. "
+                "Também aceito o conteúdo de database sem a pasta, se incluir bot.db. "
                 "Use uma cópia feita com o bot de origem parado, incluindo os arquivos SQLite -wal, "
                 "se existirem. Evite restaurar durante compras ou pagamentos em andamento.\n\n"
                 "Vou validar o arquivo e pedir sua confirmação antes de reiniciar. "
@@ -89,24 +99,27 @@ def registrar(bot, owner_id, root="."):
             bot.send_message(owner_id, "Restauração cancelada. Os dados atuais não foram alterados.")
 
     @bot.message_handler(content_types=["document"],
-                         func=lambda m: authorized(m) and bool(state))
+                         func=lambda m: authorized(m) and (is_zip(m) or bool(state)))
     def receive(message):
+        if not authorized(message):
+            return
+        if os.getenv("BOT_RESTORE_SUPERVISED") != "1":
+            bot.send_message(owner_id, "Esta execução não suporta a restauração. Atualize os arquivos "
+                             "da hospedagem e inicie pelo bot.py da raiz ou start.py.")
+            return
         with lock:
-            if not active():
-                state.clear()
-                data_restore.discard(root)
-                bot.send_message(owner_id, "Prazo expirado. Use /restaurar_dados novamente.")
-                return
             document = message.document
-            if not (document.file_name or "").lower().endswith(".zip"):
+            if not is_zip(message):
                 bot.send_message(owner_id, "Envie um arquivo .zip.")
                 return
-            if not document.file_size or document.file_size > data_restore.MAX_ZIP_BYTES:
+            if document.file_size and document.file_size > data_restore.MAX_ZIP_BYTES:
                 bot.send_message(owner_id, "O ZIP deve ter no máximo 20 MB.")
                 return
+            state.update(expires=time.monotonic() + SESSION_SECONDS)
             state["token"] = None  # Invalida qualquer confirmação de um ZIP anterior.
             upload = None
             try:
+                bot.send_message(owner_id, "📦 ZIP recebido. Baixando e validando os dados, aguarde…")
                 info = bot.get_file(document.file_id)
                 if info.file_size and info.file_size > data_restore.MAX_ZIP_BYTES:
                     raise ValueError("O ZIP deve ter no máximo 20 MB.")
@@ -119,6 +132,7 @@ def registrar(bot, owner_id, root="."):
                     upload = Path(stream.name)
                     stream.write(payload)
                 summary = data_restore.prepare(root, upload)
+                folders = summary.get("folders", data_restore.FOLDERS)
                 token = secrets.token_hex(8)
                 state.update(token=token, expires=time.monotonic() + SESSION_SECONDS)
                 markup = InlineKeyboardMarkup()
@@ -126,13 +140,25 @@ def registrar(bot, owner_id, root="."):
                 markup.row(InlineKeyboardButton("Cancelar", callback_data=f"restore:no:{token}"))
                 bot.send_message(owner_id,
                     f"ZIP validado: {summary['files']} arquivos.\n\n"
-                    "Confirmar a substituição completa de database, textos e data? "
-                    "O bot reiniciará e guardará um backup das pastas anteriores.",
+                    f"Substituir completamente: {', '.join(folders)}? "
+                    "Arquivos antigos dessas pastas ausentes no ZIP serão removidos. "
+                    "Pastas não enviadas serão preservadas. "
+                    "O bot reiniciará e guardará um backup das pastas anteriores.\n"
+                    "Use uma cópia feita com o bot de origem parado e evite restaurar durante pagamentos."
+                    + (f"\n{summary.get('ignored', 0)} entradas fora das pastas de dados foram ignoradas."
+                       if summary.get('ignored') else ""),
                     reply_markup=markup)
             except Exception as exc:
                 logging.exception("Falha ao validar importação de dados")
                 state["token"] = None
-                reason = str(exc) if isinstance(exc, ValueError) else "Não foi possível baixar ou validar o ZIP."
+                if isinstance(exc, ValueError):
+                    reason = str(exc)
+                elif isinstance(exc, zipfile.BadZipFile):
+                    reason = "O arquivo ZIP está corrompido ou não é um ZIP válido. Compacte novamente."
+                elif isinstance(exc, sqlite3.DatabaseError):
+                    reason = "Não foi possível abrir o banco SQLite do ZIP. Faça uma nova cópia com o bot de origem parado."
+                else:
+                    reason = "Não foi possível baixar ou validar o ZIP. Verifique o limite de 20 MB e tente novamente."
                 bot.send_message(owner_id, f"❌ {reason}\nOs dados atuais não foram alterados. Envie outro ZIP.")
             finally:
                 if upload:
@@ -162,3 +188,30 @@ def registrar(bot, owner_id, root="."):
             finally:
                 # Todas as threads/conexões terminam ANTES de o launcher trocar as pastas.
                 os._exit(data_restore.RESTART_CODE)
+
+    # Próximos passos de outros menus consomem mensagens ANTES dos handlers.
+    # Encaminha apenas comandos de restauração e ZIPs do dono diretamente.
+    original_process_messages = bot.process_new_messages
+
+    def process_messages(messages):
+        remaining = []
+        for message in messages:
+            command = (getattr(message, "text", None) or "").split()
+            command = command[0].split("@", 1)[0].lower() if command else ""
+            handler = None
+            if authorized(message):
+                if command == "/restaurar_dados":
+                    handler = begin
+                elif command == "/cancelar_restauracao":
+                    handler = cancel
+                elif is_zip(message):
+                    handler = receive
+            if handler:
+                bot.clear_step_handler_by_chat_id(owner_id)
+                bot._exec_task(handler, message)
+            else:
+                remaining.append(message)
+        if remaining:
+            original_process_messages(remaining)
+
+    bot.process_new_messages = process_messages

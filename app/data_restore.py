@@ -41,7 +41,7 @@ def discard(root):
 
 def _validate_data(candidate):
     database = candidate / "database" / "bot.db"
-    if not database.is_file():
+    if (candidate / "database").exists() and not database.is_file():
         raise ValueError("O ZIP precisa conter database/bot.db.")
     files = [p for p in candidate.rglob("*") if p.is_file()]
     for path in files:
@@ -80,6 +80,59 @@ def _validate_data(candidate):
             conn.close()
 
 
+def _data_entries(entries):
+    """Localiza pastas de dados, inclusive em backup completo ou com pasta externa."""
+    parsed = []
+    prefixes = {}
+    for entry in entries:
+        name = entry.orig_filename.replace("\\", "/")
+        while name.startswith("./"):
+            name = name[2:]
+        parts = tuple(name.rstrip("/").split("/"))
+        mode = entry.external_attr >> 16
+        if ("\x00" in name or any(p in ("", ".", "..") for p in parts)
+                or any(":" in p or p.endswith((".", " ")) for p in parts)
+                or stat.S_IFMT(mode) not in (0, stat.S_IFREG, stat.S_IFDIR)
+                or entry.flag_bits & 1):
+            raise ValueError("ZIP contém caminho não permitido, link ou arquivo criptografado.")
+        if parts[0] == "__MACOSX" or parts[-1] == ".DS_Store":
+            continue
+        parsed.append((entry, parts))
+        for i, part in enumerate(parts):
+            if part in FOLDERS:
+                prefixes.setdefault(parts[:i], set()).add(part)
+    candidates = list(prefixes)
+    if candidates:
+        depth = min(map(len, candidates))
+        candidates = [p for p in candidates if len(p) == depth]
+    if not candidates:
+        # Também aceita o conteúdo da pasta database sem a pasta em si.
+        bases = {parts[:-1] for entry, parts in parsed if parts[-1] == "bot.db" and not entry.is_dir()}
+        if len(bases) == 1:
+            base = bases.pop()
+            selected = []
+            for entry, parts in parsed:
+                relative = parts[len(base):]
+                if parts[:len(base)] != base or len(relative) != 1 or entry.is_dir():
+                    continue
+                filename = relative[0]
+                if (Path(filename).suffix.lower() in (".db", ".sqlite", ".sqlite3", ".json", ".txt")
+                        or filename.endswith(("-wal", "-shm", "-journal"))):
+                    selected.append((entry, ("database", filename)))
+            return selected, len(entries) - len(selected)
+        raise ValueError("Não encontrei database, textos ou data no ZIP. "
+                         "Envie essas pastas ou o conteúdo de database incluindo bot.db.")
+    if len(candidates) != 1:
+        raise ValueError("O ZIP contém mais de um conjunto de dados. Envie apenas um backup.")
+    prefix = candidates[0]
+    selected = []
+    for entry, parts in parsed:
+        relative = parts[len(prefix):]
+        if parts[:len(prefix)] == prefix and relative and relative[0] in FOLDERS:
+            selected.append((entry, relative))
+    return selected, len(entries) - len(selected)
+
+
 def prepare(root, zip_path):
     """Extrai/valida em staging; não modifica nenhum dado em uso."""
     root = Path(root).resolve()
@@ -95,19 +148,20 @@ def prepare(root, zip_path):
                 raise ValueError("ZIP vazio ou com mais de 10.000 entradas.")
             if sum(i.file_size for i in entries) > MAX_EXPANDED_BYTES:
                 raise ValueError("O conteúdo descompactado excede 200 MB.")
+            selected, ignored = _data_entries(entries)
             seen, folders = set(), set()
             total = count = 0
-            for entry in entries:
-                name = entry.orig_filename
-                parts = name.rstrip("/").split("/")
+            for entry, parts in selected:
+                name = entry.orig_filename.replace("\\", "/")
+                is_dir = name.endswith("/")
                 mode = entry.external_attr >> 16
-                if ("\\" in name or "\x00" in name or any(p in ("", ".", "..") for p in parts)
+                if ("\x00" in name or any(p in ("", ".", "..") for p in parts)
                         or any(":" in p or p.endswith((".", " ")) for p in parts)
                         or parts[0] not in FOLDERS
                         or stat.S_IFMT(mode) not in (0, stat.S_IFREG, stat.S_IFDIR)
                         or entry.flag_bits & 1):
                     raise ValueError("ZIP contém caminho não permitido, link ou arquivo criptografado.")
-                if len(parts) == 1 and not entry.is_dir():
+                if len(parts) == 1 and not is_dir:
                     raise ValueError("database, textos e data precisam ser pastas.")
                 key = "/".join(parts).casefold()
                 if key in seen:
@@ -115,7 +169,7 @@ def prepare(root, zip_path):
                 seen.add(key)
                 folders.add(parts[0])
                 target = candidate.joinpath(*parts)
-                if entry.is_dir():
+                if is_dir:
                     target.mkdir(parents=True, exist_ok=True)
                     continue
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -126,10 +180,10 @@ def prepare(root, zip_path):
                             raise ValueError("O conteúdo descompactado excede 200 MB.")
                         dest.write(chunk)
                 count += 1
-            if folders != set(FOLDERS):
-                raise ValueError("Inclua as três pastas na raiz do ZIP: database, textos e data.")
+            if not folders:
+                raise ValueError("Nenhuma pasta de dados encontrada no ZIP.")
         _validate_data(candidate)
-        return {"files": count, "bytes": total}
+        return {"files": count, "bytes": total, "ignored": ignored, "folders": sorted(folders)}
     except Exception:
         discard(root)
         raise
@@ -139,9 +193,10 @@ def queue(root, chat_id):
     work = Path(root).resolve() / STATE_DIR
     if (work / "pending.json").exists() or (work / "journal.json").exists():
         raise ValueError("Já existe uma restauração em andamento.")
-    if not all((work / "candidate" / name).is_dir() for name in FOLDERS):
+    folders = [name for name in FOLDERS if (work / "candidate" / name).is_dir()]
+    if not folders:
         raise ValueError("Envie e valide um ZIP antes de confirmar.")
-    _write_json(work / "pending.json", {"id": uuid.uuid4().hex, "chat_id": int(chat_id)})
+    _write_json(work / "pending.json", {"id": uuid.uuid4().hex, "chat_id": int(chat_id), "folders": folders})
 
 
 def _rollback(root, record):
@@ -149,7 +204,7 @@ def _rollback(root, record):
     backup = work / "backups" / record["id"]
     rejected = backup / "rejected"
     rejected.mkdir(parents=True, exist_ok=True)
-    for name in FOLDERS:
+    for name in record.get("folders", FOLDERS):
         live, old = root / name, backup / name
         # Se já foi revertido, old não existe e rejected/name existe.
         if old.exists():
@@ -178,23 +233,26 @@ def apply_pending(root):
     if not pending.exists():
         return
     record = _read_json(pending)
+    folders = record.get("folders", list(FOLDERS))
+    if not folders or not set(folders).issubset(FOLDERS):
+        raise ValueError("Registro de restauração com pastas inválidas.")
     candidate = work / "candidate"
     # Valida novamente após o processo antigo fechar todas as conexões.
     try:
         _validate_data(candidate)
-        for name in FOLDERS:
+        for name in folders:
             if (root / name).is_symlink() or not (candidate / name).is_dir():
                 raise ValueError("Pastas inválidas para restauração.")
-        record["existed"] = {name: (root / name).exists() for name in FOLDERS}
+        record["existed"] = {name: (root / name).exists() for name in folders}
         backup = work / "backups" / record["id"]
         backup.mkdir(parents=True)
         _write_json(journal, record)
-        for name in FOLDERS:
+        for name in folders:
             if record["existed"][name]:
                 os.replace(root / name, backup / name)
             os.replace(candidate / name, root / name)
         _write_json(work / "result.json", {
-            "chat_id": record["chat_id"], "ok": True,
+            "chat_id": record["chat_id"], "ok": True, "folders": folders,
             "backup": str(backup.relative_to(root)),
         })
         pending.unlink()
