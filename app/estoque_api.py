@@ -9,6 +9,7 @@ from functools import wraps
 from contextlib import contextmanager
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
+from urllib.parse import quote
 
 import requests
 
@@ -60,24 +61,21 @@ class EstoqueAPIError(RuntimeError):
 
 
 def detalhe_resposta(response, key):
-    """Extrai apenas o erro, sem publicar corpo, cabeçalhos ou credenciais."""
-    try:
-        payload = response.json()
-    except ValueError:
-        return 'O fornecedor retornou uma resposta que não é JSON.'
-    if not isinstance(payload, dict):
-        return 'O fornecedor não informou uma mensagem de erro.'
-    detail = payload.get('error') or payload.get('message') or payload.get('detail')
-    if isinstance(detail, dict):
-        detail = detail.get('message') or detail.get('code')
-    if not isinstance(detail, str):
-        return 'O fornecedor não informou uma mensagem de erro.'
-    for secret in (key, html.escape(key), json.dumps(key)[1:-1]):
+    """Mostra o corpo real como texto no privado do admin, com segredos ocultos."""
+    detail = response.text
+    if not detail:
+        return '[corpo vazio]'
+    for secret in (key, html.escape(key), json.dumps(key)[1:-1], quote(key, safe='')):
         if secret:
             detail = detail.replace(secret, '[CHAVE OCULTA]')
+    detail = re.sub(r'''(?i)(["']?(?:x-stock-key|token|password|senha|secret|api[_-]?key)["']?\s*[:=]\s*)("[^"\r\n]*"|'[^'\r\n]*'|[^\s,;}<]+)''',
+                    r'\1[OCULTO]', detail)
     detail = re.sub(r'(?i)(bearer\s+|(?:x-stock-key|token|password|senha|secret|api[_-]?key)\s*[:=]\s*)[^\s,;]+',
                     r'\1[OCULTO]', detail)
-    return ' '.join(detail.split())[:600]
+    # Até 3000 unidades UTF-16, deixando espaço para o diagnóstico no Telegram.
+    if len(detail) > 1500:
+        return detail[:1500] + '\n[retorno truncado: exibidos os primeiros 1500 caracteres]'
+    return detail
 
 
 def config():
@@ -119,10 +117,10 @@ def request(method, path='', key=None, **kwargs):
         raise EstoqueAPIError('API indisponível. Consulte o suporte antes de repetir a compra.',
                               f'{operation}\n{reason}\nSe era uma reserva, confira no fornecedor antes de repetir.') from None
     if response.status_code != 200 and response.status_code != 201:
-        reasons = {401: 'Chave da API inválida.', 403: 'API bloqueada: verifique chave e saldo no bot raiz.',
+        reasons = {401: 'Chave da API inválida.', 403: 'Acesso negado pelo servidor (Forbidden).',
                    402: 'Saldo insuficiente no bot raiz.', 409: 'Reserva recusada ou estoque indisponível.'}
         message = reasons.get(response.status_code, 'API recusou a operação. Consulte o suporte.')
-        diagnostic = f'{operation}\nHTTP {response.status_code}: {message}\nFornecedor: {detalhe_resposta(response, key)}'
+        diagnostic = f'{operation}\nHTTP {response.status_code}: {message}\nRetorno do servidor:\n{detalhe_resposta(response, key)}'
         if response.status_code == 401:
             diagnostic += '\nGere ou confirme a chave X-Stock-Key no bot raiz e envie novamente em Definir chave.'
         raise EstoqueAPIError(message, diagnostic)
@@ -130,7 +128,7 @@ def request(method, path='', key=None, **kwargs):
         return response.json()
     except ValueError:
         raise EstoqueAPIError('Resposta inválida da API. Consulte o suporte.',
-                              f'{operation}\nHTTP {response.status_code}: o fornecedor retornou conteúdo que não é JSON.') from None
+                              f'{operation}\nHTTP {response.status_code}: o fornecedor retornou conteúdo que não é JSON.\nRetorno do servidor:\n{detalhe_resposta(response, key)}') from None
 
 
 def normalizar(payload):

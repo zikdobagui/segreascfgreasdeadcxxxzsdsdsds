@@ -36,7 +36,7 @@ class RemoteStockTests(unittest.TestCase):
 
     @staticmethod
     def response(data, status=200):
-        return SimpleNamespace(status_code=status, json=lambda: data)
+        return SimpleNamespace(status_code=status, json=lambda: data, text=json.dumps(data))
 
     def test_get_uses_key_and_never_reserves(self):
         self.assertEqual(stock.catalogo()[0]['quantidade'], 3)
@@ -65,13 +65,37 @@ class RemoteStockTests(unittest.TestCase):
             self.assertIn(expected, raised.exception.diagnostico)
             self.assertNotIn('secret-test-key', raised.exception.diagnostico)
 
-    def test_non_json_error_is_reported_without_response_body(self):
+    def test_non_json_error_shows_real_body_with_key_hidden(self):
         self.request.side_effect = None
-        self.request.return_value = SimpleNamespace(status_code=502, json=Mock(side_effect=ValueError()))
+        self.request.return_value = SimpleNamespace(status_code=403, json=Mock(side_effect=ValueError()),
+                                                    text='<html>Forbidden\nsecret-test-key</html>')
         with self.assertRaises(stock.EstoqueAPIError) as raised:
             stock.catalogo()
-        self.assertIn('HTTP 502', raised.exception.diagnostico)
-        self.assertIn('não é JSON', raised.exception.diagnostico)
+        self.assertIn('HTTP 403', raised.exception.diagnostico)
+        self.assertIn('<html>Forbidden\n[CHAVE OCULTA]</html>', raised.exception.diagnostico)
+        self.assertNotIn('secret-test-key', raised.exception.diagnostico)
+        self.assertNotIn('saldo', raised.exception.diagnostico)
+
+    def test_real_response_preserves_json_and_redacts_sensitive_fields(self):
+        response = self.response({'error': 'blocked', 'request_id': 'abc', 'token': 'private-token', 'senha': 'private password'})
+        detail = stock.detalhe_resposta(response, 'test-key')
+        self.assertIn('"request_id": "abc"', detail)
+        self.assertNotIn('private-token', detail)
+        self.assertNotIn('private password', detail)
+
+    def test_real_response_handles_empty_and_large_bodies(self):
+        self.assertEqual(stock.detalhe_resposta(SimpleNamespace(text=''), 'key'), '[corpo vazio]')
+        detail = stock.detalhe_resposta(SimpleNamespace(text='x' * 1600), 'key')
+        self.assertTrue(detail.startswith('x' * 1500 + '\n'))
+        self.assertIn('truncado', detail)
+
+    def test_success_with_invalid_json_shows_real_body(self):
+        self.request.side_effect = None
+        self.request.return_value = SimpleNamespace(status_code=200, json=Mock(side_effect=ValueError()),
+                                                    text='<html>Challenge</html>')
+        with self.assertRaises(stock.EstoqueAPIError) as raised:
+            stock.catalogo()
+        self.assertIn('<html>Challenge</html>', raised.exception.diagnostico)
 
     def test_invalid_header_key_is_rejected_before_network(self):
         for key in ('key\nvalue', 'chave🔑'):

@@ -5,7 +5,10 @@ Depois de reiniciar o bot, abra `/admin` no privado e escolha **API de estoque**
 1. Use **Definir chave** para cadastrar o valor completo de `X-Stock-Key`.
 2. Use **Testar conexão** para consultar produtos e quantidades, sem gastar saldo.
    Falhas aparecem no privado do administrador com a operação, o código HTTP e
-   a mensagem de erro do fornecedor (com a chave ocultada). `401 unauthorized`
+   o corpo real da resposta, inclusive HTML ou texto (com chave e campos de
+   credenciais ocultados). Respostas longas exibem os primeiros 1500 caracteres
+   e um aviso de truncamento. `403` indica acesso negado pelo servidor, sem
+   presumir problema de saldo. `401 unauthorized`
    significa que o fornecedor recusou a chave: confirme ou gere uma nova
    `X-Stock-Key` no bot raiz e cadastre novamente. A chave anterior é preservada
    quando o teste da nova chave falha. Erros de rede, TLS e tempo limite também
